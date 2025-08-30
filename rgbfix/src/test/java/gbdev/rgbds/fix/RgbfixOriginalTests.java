@@ -97,8 +97,10 @@ public class RgbfixOriginalTests {
                     Stream.of(outputGb.getAbsolutePath())
             ).toArray(String[]::new);
 
-            String msg = String.format("Test failed for: %s\nrgbfix %s\n\n", baseName,
-                        Arrays.stream(args).collect(Collectors.joining(" ")));
+            String msg = String.format("Test failed for: %s\nrgbfix %s\n\n"
+                        +"meld <(hexdump -C %s) <(hexdump -C %s)\n\n", baseName,
+                        Arrays.stream(args).collect(Collectors.joining(" ")),
+                        referenceGb.getAbsolutePath(),outputGb.getAbsolutePath());
 
             // Exécuter le programme
             assertEquals(msg,0,Rgbfix.execute(args));

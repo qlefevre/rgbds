@@ -161,7 +161,7 @@ public class Rgbfix implements Callable<Integer> {
                 rom[0x143] = (byte) 0x80;
             }
 
-            // Fix certain header values (l=logo, h=header checksum, g=global checksum, L/H/G=trash).
+            // Fix certain header values (l=logo, h=header checksum, g=global checksum).
             if (fixSpec != null) {
                 applyFixSpec(rom, fixSpec);
             }
@@ -222,7 +222,7 @@ public class Rgbfix implements Callable<Integer> {
                 applyFixSpec(rom, "lhg");
             }
 
-            // Écrire le résultat
+            // Write rom
             File outFile = outputFile != null ? outputFile : inputFile;
             Files.write(outFile.toPath(), rom, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             System.out.println("Fixed ROM written to: " + outFile.getName());
@@ -231,6 +231,21 @@ public class Rgbfix implements Callable<Integer> {
         return 0;
     }
 
+    /**
+     * Applies specific fixes to a ROM based on a given specification.
+     * <p>
+     * The {@code spec} string indicates which fixes to apply:
+     * <ul>
+     *     <li>{@code 'l'}: fixes the built-in logo in the ROM.</li>
+     *     <li>{@code 'h'}: recalculates and fixes the header checksum.</li>
+     *     <li>{@code 'g'}: recalculates and fixes the global checksum of the ROM.</li>
+     * </ul>
+     * For example, {@code spec = "lh"} will apply both the logo and header checksum fixes.
+     * </p>
+     *
+     * @param rom  the byte array representing the ROM to be fixed
+     * @param spec the specification of which fixes to apply
+     */
     private void applyFixSpec(byte[] rom, String spec) {
         if (spec.contains("l")) fixLogo(rom);
         if (spec.contains("h")) fixHeaderChecksum(rom);
@@ -335,7 +350,7 @@ public class Rgbfix implements Callable<Integer> {
      */
     private void setGameId(byte[] rom, String id) {
         // Truncate to 4 characters or pad with spaces if shorter
-        String gameId = String.format("%-4s", id).substring(0,4).toUpperCase();
+        String gameId = String.format("%-4s", id).substring(0,4);
 
         // Write each character as a byte in the ROM header
         for (int i = 0; i < 4; i++) {
@@ -605,7 +620,7 @@ public class Rgbfix implements Callable<Integer> {
         }
 
         // Process the title: convert to uppercase and truncate if needed
-        String processedTitle = title.toUpperCase();
+        String processedTitle = title;
         if (processedTitle.length() > maxLength) {
             processedTitle = processedTitle.substring(0, maxLength);
         }
@@ -614,7 +629,7 @@ public class Rgbfix implements Callable<Integer> {
         byte[] titleBytes = processedTitle.getBytes(StandardCharsets.US_ASCII);
 
         // Clear the title area with null bytes
-        Arrays.fill(rom, 0x134, 0x134 + maxLength, (byte) 0x00);
+        //Arrays.fill(rom, 0x134, 0x134 + maxLength, (byte) 0x00);
 
         // Copy the title bytes to the ROM header
         System.arraycopy(titleBytes, 0, rom, 0x134, titleBytes.length);
@@ -673,11 +688,31 @@ public class Rgbfix implements Callable<Integer> {
         return rom;
     }
 
+    /**
+     * Main entry point for RGBFix.
+     * <p>
+     * Executes the ROM fixing process with the given command-line arguments
+     * and exits with the returned code.
+     * </p>
+     *
+     * @param args command-line arguments specifying ROM files and fix options
+     */
     public static void main(String[] args) {
         int exitCode = execute(args);
         System.exit(exitCode);
     }
 
+    /**
+     * Executes the RGBFix process with the given command-line arguments.
+     * <p>
+     * This method first preprocesses the arguments to remove surrounding
+     * single or double quotes, then delegates execution to the
+     * {@link picodotdev.cli.CommandLine} runner for RGBFix.
+     * </p>
+     *
+     * @param args the command-line arguments specifying ROM files and fix options
+     * @return the exit code resulting from the RGBFix execution (0 for success, non-zero for errors)
+     */
     public static int execute(String[] args){
         // Preprocess arguments to remove surrounding single quotes (Java 8)
         for (int i = 0; i < args.length; i++) {

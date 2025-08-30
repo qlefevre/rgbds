@@ -166,11 +166,6 @@ public class Rgbfix implements Callable<Integer> {
                 applyFixSpec(rom, fixSpec);
             }
 
-            // Option validate : Equivalent to -f lhg 
-            if (validate) {
-                applyFixSpec(rom, "lhg");
-            }
-
             // Set the game ID string (0x13F-0x142).
             if (gameId != null) {
                 setGameId(rom, gameId);
@@ -220,6 +215,11 @@ public class Rgbfix implements Callable<Integer> {
             // Pad the ROM image to a valid size with a given pad value from 0 to 255.
             if (padValue != null) {
                 rom = padRom(rom, padValue);
+            }
+
+            // Option validate : Equivalent to -f lhg 
+            if (validate) {
+                applyFixSpec(rom, "lhg");
             }
 
             // Écrire le résultat

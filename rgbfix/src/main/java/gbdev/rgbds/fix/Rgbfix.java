@@ -1,3 +1,27 @@
+/**
+ * MIT License
+ * 
+ * Copyright (c) 2014-2025, Quentin Lefèvre and the RGBDS-JVM contributors.
+ * Copyright (c) 1996-2025, Carsten Sørensen and the RGBDS contributors (for the program arguments part).
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package gbdev.rgbds.fix;
 
 import picocli.CommandLine;
@@ -90,7 +114,7 @@ public class Rgbfix implements Callable<Integer> {
         names = {"-r", "--ram-size"},
         description = "Set the RAM size (0x149) to a given value from 0 to 0xFF."
     )
-    private Integer ramSize;
+    private String ramSize;
 
     @Option(
         names = {"-s", "--sgb-compatible"},
@@ -109,18 +133,6 @@ public class Rgbfix implements Callable<Integer> {
         description = "Equivalent to -f lhg."
     )
     private boolean validate;
-
-    @Option(
-        names = {"-w"},
-        description = "Disable all warning output."
-    )
-    private boolean disableWarnings;
-
-    @Option(
-        names = {"-W", "--warning"},
-        description = "Set warning flag."
-    )
-    private String warning;
 
     @Parameters(
         paramLabel = "FILE",
@@ -165,10 +177,11 @@ public class Rgbfix implements Callable<Integer> {
             }
 
             // Set the non-Japanese region flag (0x14A) to 0x01.
-            rom[0x14A] = (byte)(nonJapanese ? 0x01 : 0x00);
-            
+            if(nonJapanese){
+                rom[0x14A] = (byte) 0x01;
+            }
 
-        
+            // Set the new licensee string (0x144-0x145).
             if (newLicensee != null) {
                 setNewLicensee(rom, newLicensee);
             }
@@ -181,6 +194,11 @@ public class Rgbfix implements Callable<Integer> {
             // Set the MBC type (0x147) to a given value from 0 to 0xFF.
             if (mbcType != null) {
                 setMbcType(rom, mbcType);
+            }
+
+            // Set the RAM size (0x149) to a given value from 0 to 0x05.
+            if (ramSize != null){
+                setRamSize(rom, ramSize);
             }
 
             // Set the ROM version (0x14C) to a given value from 0 to 0xFF.
@@ -270,10 +288,39 @@ public class Rgbfix implements Callable<Integer> {
                         String.format("%02X", checksum & 0xFF));
     }
 
-
+    /**
+     * Fixes the global checksum of a ROM.
+     * 
+     * The global checksum is a 16-bit value stored at memory addresses 0x14E and 0x14F. 
+     * This checksum is computed as the sum of all the bytes in the ROM (excluding the checksum bytes themselves).
+     * The checksum is stored in big-endian format, with the most significant byte at 0x14E and the least significant byte at 0x14F.
+     * 
+     * @param rom The ROM byte array to modify.
+     */
     private void fixGlobalChecksum(byte[] rom) {
-        // Implémenter la correction du checksum global
-        System.out.println("Fixing global checksum...");
+
+        // Start by calculating the checksum for the ROM excluding the checksum bytes themselves (0x14E-0x14F)
+        int checksum = 0;
+        
+        // Loop through the ROM and sum up all bytes except the checksum bytes at 0x14E and 0x14F
+        for (int i = 0; i < rom.length; i++) {
+            // Skip the checksum bytes
+            if (i == 0x14E || i == 0x14F) {
+                continue;
+            }
+            checksum += Byte.toUnsignedInt(rom[i]);  // Sum the byte values (byte to unsigned int)
+        }
+
+        // Now, store the checksum in the global checksum bytes (0x14E-0x14F)
+        // The checksum is 16-bit (big-endian), so split it into two bytes
+
+        // Calculate the high byte (most significant byte)
+        rom[0x14E] = (byte) (checksum >> 8);  // Shift right by 8 bits to get the high byte
+        // Calculate the low byte (least significant byte)
+        rom[0x14F] = (byte) (checksum & 0xFF);  // Mask with 0xFF to get the low byte
+
+        // Print the result for debugging purposes
+        System.out.println("Global checksum fixed: 0x" + Integer.toHexString(checksum).toUpperCase());
     }
 
 
@@ -288,7 +335,7 @@ public class Rgbfix implements Callable<Integer> {
      */
     private void setGameId(byte[] rom, String id) {
         // Truncate to 4 characters or pad with spaces if shorter
-        String gameId = (id.length() >= 4 ? id.substring(0, 4) : String.format("%-4s", id)).toUpperCase();
+        String gameId = String.format("%-4s", id).substring(0,4).toUpperCase();
 
         // Write each character as a byte in the ROM header
         for (int i = 0; i < 4; i++) {
@@ -298,11 +345,69 @@ public class Rgbfix implements Callable<Integer> {
     }
 
 
-    private void setNewLicensee(byte[] rom, String licensee) {
-        // Implémenter la définition du nouveau licensee
-        System.out.println("Setting new licensee: " + licensee);
+    /**
+     * Sets the "New Licensee" string in the Game Boy ROM header at offsets 0x144–0x145.
+     * <p>
+     * This field encodes the licensee (publisher) using a two-character ASCII string.
+     * If the provided string is longer than 2 characters, it will be truncated.
+     * If it is shorter, it will be padded with spaces.
+     * <p>
+     * Examples:
+     * <ul>
+     *     <li>"01" → Nintendo</li>
+     *     <li>"08" → Capcom</li>
+     *     <li>"13" → Electronic Arts</li>
+     *     <li>"18" → Hudson Soft</li>
+     * </ul>
+     * <p>
+     * This value is written at offsets:
+     * <ul>
+     *     <li>0x144 → first character</li>
+     *     <li>0x145 → second character</li>
+     * </ul>
+     *
+     * @param rom          the byte array representing the ROM data
+     * @param licenseeCode the licensee string (will be truncated or padded to 2 characters)
+     */
+    private void setNewLicensee(byte[] rom, String licenseeCode) {
+        // Ensure the licensee string is exactly 2 characters:
+        // - If longer, take only the first 2 characters
+        // - If shorter, pad with spaces
+        String normalized = String.format("%-2s", licenseeCode).substring(0,2);
+
+        // Write the 2 ASCII characters into the ROM header at offsets 0x144–0x145
+        rom[0x144] = (byte) normalized.charAt(0);
+        rom[0x145] = (byte) normalized.charAt(1);
     }
 
+
+    /**
+     * Sets the RAM size value in the Game Boy ROM header at offset 0x149.
+     * <p>
+     * This byte determines how much external RAM is available on the cartridge.
+     * According to the Game Boy hardware specification:
+     * <ul>
+     *     <li>0x00 → No RAM</li>
+     *     <li>0x01 → Unused (historically misdocumented as 2 KiB, never used)</li>
+     *     <li>0x02 → 8 KiB (1 bank)</li>
+     *     <li>0x03 → 32 KiB (4 banks of 8 KiB each)</li>
+     *     <li>0x04 → 128 KiB (16 banks of 8 KiB each)</li>
+     *     <li>0x05 → 64 KiB (8 banks of 8 KiB each)</li>
+     * </ul>
+     * If the cartridge type does not support RAM (e.g., no RAM or MBC2),
+     * this field should be set to 0x00.
+     *
+     * @param rom     the byte array representing the ROM data
+     * @param ramSize the RAM size value (as a string, later parsed into a byte)
+     */
+    private void setRamSize(byte[] rom, String ramSize) {
+        // Convert the string representation of the RAM size to a byte
+        byte ramByte = parseByte(ramSize);
+
+        // Write the RAM size value into the ROM header at offset 0x149
+        // This value determines how much external RAM is recognized by the Game Boy
+        rom[0x149] = ramByte;
+    }
 
 
     /**
@@ -320,8 +425,17 @@ public class Rgbfix implements Callable<Integer> {
         try {
             mbcByte = parseByte(type);
         } catch (NumberFormatException e) {
-            // If not a number, try to parse as a named MBC type
-            mbcByte = parseMbcName(type.trim());
+            // Remove all whitespace and convert to uppercase for case-insensitive comparison
+            String normType = type.replaceAll("\\s+", "").toUpperCase();
+            // If not a number, try to parse as a named MBC or TPP type
+            if(normType.startsWith("TPP")){
+                mbcByte = parseTppName(normType);
+                 if(ramSize == null){
+                    setRamSize(rom, "0xC1");
+                 }
+            }else{
+                mbcByte = parseMbcName(normType);
+            }
         }
 
         // Write the MBC type to the ROM header
@@ -336,11 +450,10 @@ public class Rgbfix implements Callable<Integer> {
      * @return The corresponding byte value for the MBC type.
      */
     private byte parseMbcName(String mbcName) {
-        // Remove all whitespace and convert to uppercase for case-insensitive comparison
-        String normalizedName = mbcName.replaceAll("\\s+", "").toUpperCase();
 
         // Map named MBC types to their byte values
-        switch (normalizedName) {
+        switch (mbcName) {
+            case "ROM_ONLY":
             case "ROMONLY":
                 return (byte) 0x00;
             case "MBC1":
@@ -404,6 +517,43 @@ public class Rgbfix implements Callable<Integer> {
     }
 
     /**
+     * Maps a named TPP type (e.g., "TPP1_1.0+BATTERY+TIMER") to its corresponding byte value.
+     * Returns 0x00 if the name is not recognized.
+     *
+     * @param tppName The named TPP type.
+     * @return The corresponding byte value for the TPP type.
+     */
+    private byte parseTppName(String tppName) {
+        // Split on '+' to separate features
+        String[] parts = tppName.split("\\+");
+        // TPP1
+        byte mbc = (byte)0xBC; 
+        if(parts.length > 1){
+            for (int i=1;i < parts.length;i++) { // parts[0]=TPP1
+                switch (parts[i]) {
+                    case "RAM":
+                        //warning("TPP1 requests RAM implicitly if given a non-zero RAM size");
+                        break;
+                    case "BATTERY":
+                        mbc |= 0x08;
+                        break;
+                    case "TIMER":
+                        mbc |= 0x04;
+                        break;
+                    case "MULTIRUMBLE":
+                        mbc |= 0x03; // inclut aussi le flag rumble
+                        break;
+                    case "RUMBLE":
+                        mbc |= 0x01;
+                        break;
+                }
+            }
+        }
+
+        return mbc;
+    }
+
+    /**
      * Parses a string representing a number in hexadecimal (e.g., "0xFF" or "FF"),
      * binary (e.g., "0b11110000"), or decimal (e.g., "255") and returns the corresponding byte value.
      *
@@ -417,18 +567,18 @@ public class Rgbfix implements Callable<Integer> {
         if (trimmedInput.startsWith("0X")) {
             return (byte) Integer.parseInt(trimmedInput.substring(2), 16);
         }
+        // Check for hexadecimal format (e.g., "0xFF" or "FF")
+        if (trimmedInput.startsWith("$")) {
+            return (byte) Integer.parseInt(trimmedInput.substring(1), 16);
+        }
         // Check for binary format (e.g., "0b11110000")
         else if (trimmedInput.startsWith("0B")) {
             return (byte) Integer.parseInt(trimmedInput.substring(2), 2);
         }
-        // Check for hexadecimal without prefix (e.g., "FF")
-        else if (trimmedInput.matches("[0-9A-F]+")) {
-            return (byte) Integer.parseInt(trimmedInput, 16);
-        }
         // Default to decimal format (e.g., "255")
         else {
-            int decimalValue = Integer.parseInt(trimmedInput);
-            if (decimalValue < 0 || decimalValue > 255) {            
+            int decimalValue = (byte)Integer.parseInt(trimmedInput);
+            if (decimalValue < -128 || decimalValue > 127) {            
                 throw new NumberFormatException("Value out of byte range (0x00-0xFF): " + decimalValue);       
              }
             return (byte) decimalValue;
@@ -502,29 +652,41 @@ public class Rgbfix implements Callable<Integer> {
         // If ROM is already larger than the maximum valid size, don't pad
         if (newSize == rom.length) {
             System.out.println("ROM is already at a valid size (" + (newSize / 1024) + " KiB). No padding needed.");
-            return rom;
+        }else{
+            // Create new array and copy original ROM
+            byte[] paddedRom = new byte[newSize];
+            Arrays.fill(paddedRom, padValue);
+            System.arraycopy(rom, 0, paddedRom, 0, rom.length);
+            rom = paddedRom;
         }
-
-        // Create new array and copy original ROM
-        byte[] paddedRom = new byte[newSize];
-        Arrays.fill(paddedRom, padValue);
-        System.arraycopy(rom, 0, paddedRom, 0, rom.length);
 
         // Update cartridge size byte at 0x148
         int sizeCode = 0;
         while (32768 << sizeCode < newSize) {
             sizeCode++;
         }
-        paddedRom[0x148] = (byte) sizeCode;
+        rom[0x148] = (byte) sizeCode;
 
         System.out.println("Padded ROM from " + (rom.length / 1024) + " KiB to " +
                         (newSize / 1024) + " KiB with value 0x" +
                         String.format("%02X", padValue) + ".");
-        return paddedRom;
+        return rom;
     }
 
     public static void main(String[] args) {
-        int exitCode = new CommandLine(new Rgbfix()).execute(args);
+        int exitCode = execute(args);
         System.exit(exitCode);
+    }
+
+    public static int execute(String[] args){
+        // Preprocess arguments to remove surrounding single quotes (Java 8)
+        for (int i = 0; i < args.length; i++) {
+            // Remove single quotes around arguments if they exist
+            if ((args[i].startsWith("'") && args[i].endsWith("'")) || 
+                (args[i].startsWith("\"") && args[i].endsWith("\""))) {
+                args[i] = args[i].substring(1, args[i].length() - 1);
+            }
+        }
+        return new CommandLine(new Rgbfix()).execute(args);
     }
 }

@@ -186,16 +186,16 @@ public class Rgbfix implements Callable<Integer> {
                 rom[0x14B] = parseByte(oldLicensee);
             }
 
-            // Set the MBC type (0x147) to a given value from 0 to 0xFF.
-            if (mbcType != null) {
-                setMbcType(rom, mbcType);
-            }
-
             // Set the RAM size (0x149) to a given value from 0 to 0x05.
             if (ramSize != null){
                 setRamSize(rom, ramSize);
             }
 
+            // Set the MBC type (0x147) to a given value from 0 to 0xFF.
+            if (mbcType != null) {
+                setMbcType(rom, mbcType);
+            }
+            
             // Set the ROM version (0x14C) to a given value from 0 to 0xFF.
             if (romVersion != null) {
                 rom[0x14C] = parseByte(romVersion);
@@ -435,26 +435,34 @@ public class Rgbfix implements Callable<Integer> {
      */
     private void setMbcType(byte[] rom, String type) {
         byte mbcByte;
+        // Remove all whitespace and convert to uppercase for case-insensitive comparison
+        String normType = type.replaceAll("\\s+", "").toUpperCase();
 
-        // Try to parse as a hexadecimal number first
-        try {
-            mbcByte = parseByte(type);
-        } catch (NumberFormatException e) {
-            // Remove all whitespace and convert to uppercase for case-insensitive comparison
-            String normType = type.replaceAll("\\s+", "").toUpperCase();
-            // If not a number, try to parse as a named MBC or TPP type
-            if(normType.startsWith("TPP")){
-                mbcByte = parseTppName(normType);
-                 if(ramSize == null){
-                    setRamSize(rom, "0xC1");
-                 }
-            }else{
+        // MBC de type TPP1.1
+        if(normType.startsWith("TPP")){
+            mbcByte = parseTppName(normType);
+            // 0147, 0149, 014A: identification values.
+            // for this specification, these values must be set to BC, C1 and 65 respectively.
+            rom[0x147] = (byte)0xBC;
+            rom[0x149] = (byte)0xC1;
+            rom[0x14A] = (byte)0x65;
+            // 0150: major version number. 0151: minor version number. 
+            rom[0x150] = (byte)0x01;
+            rom[0x151] = (byte)0x00;
+            // 0153: feature fields. This value contains bit flags indicating which features the cartridge uses. 
+            rom[0x152] = ramSize != null ? parseByte(ramSize) : rom[0x152];
+            rom[0x153] = mbcByte;
+        }else{
+            // Try to parse as a hexadecimal number first
+            try {
+                mbcByte = parseByte(normType);
+            } catch (NumberFormatException e) {
+                // If not a number, try to parse as a named MBC
                 mbcByte = parseMbcName(normType);
             }
+            // Write the MBC type to the ROM header
+            rom[0x147] = mbcByte;
         }
-
-        // Write the MBC type to the ROM header
-        rom[0x147] = mbcByte;
     }
 
     /**
@@ -542,7 +550,7 @@ public class Rgbfix implements Callable<Integer> {
         // Split on '+' to separate features
         String[] parts = tppName.split("\\+");
         // TPP1
-        byte mbc = (byte)0xBC; 
+        byte mbc = 0; 
         if(parts.length > 1){
             for (int i=1;i < parts.length;i++) { // parts[0]=TPP1
                 switch (parts[i]) {
